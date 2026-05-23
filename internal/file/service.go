@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"time"
+	"unsafe"
 
 	"github.com/google/uuid"
 )
 
+// TODO: Implement interfaces for write more unit-tests and benchmarks
 type FileService struct {
 	repo    FileRepo
 	storage Storage
@@ -38,8 +41,9 @@ func (s *FileService) Upload(ctx context.Context, filename string, r io.Reader, 
 	if ttlHours > 0 && ttlHours <= s.config.MaxTTLHours {
 		defaultTTLHours = ttlHours
 	}
+
 	id := uuid.New().String()
-	storagePath := fmt.Sprintf("file_%s_%d", id, size)
+	storagePath := buildStoragePath(id, size)
 	expiresAt := time.Now().Add(time.Duration(defaultTTLHours) * time.Hour)
 	file := NewFile(id, filename, storagePath, size, expiresAt)
 	if err := s.storage.Save(file.Path, r); err != nil {
@@ -68,4 +72,19 @@ func (s *FileService) Download(ctx context.Context, id string) (string, error) {
 		return "", ErrFileExpired
 	}
 	return f.Path, nil
+}
+
+func buildStoragePath(id string, size int64) string {
+
+	// 5 - "file_" size
+	// 16 - ok for byte filesize
+	maxBuffSize := 5 + len(id) + 20
+
+	buf := make([]byte, 0, maxBuffSize)
+
+	buf = append(buf, "file_"...)
+	buf = append(buf, id...)
+	buf = strconv.AppendInt(buf, size, 10)
+
+	return unsafe.String(unsafe.SliceData(buf), len(buf))
 }
